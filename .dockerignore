@@ -1,0 +1,15 @@
+# Ignore everything by default
+*
+
+# Allow Dockerfile itself
+!Dockerfile
+
+# Allow the app folder and specific files
+!src/api/
+!pyproject.toml
+!uv.lock
+!README.md
+
+# Within allowed dirs, still ignore python cache files
+**/__pycache__/
+**/*.pyc

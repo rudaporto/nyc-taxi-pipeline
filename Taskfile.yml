@@ -1,0 +1,21 @@
+version: '3'
+tasks:
+  test:
+    cmds:
+      - docker compose -f docker-compose.yaml up minio -d
+      - uv run pytest -svv --disable-warnings --maxfail=1
+    defer:
+      - docker compose -f docker-compose.yaml down --remove-orphans
+
+  build:
+    cmds:
+      - docker build -t api:latest .
+
+  download:testdata:
+    cmds:
+      - python download.py 2025
+
+  format:
+    cmds:
+      - uv run black --target-version py314 .
+      - uv run isort --profile black .
