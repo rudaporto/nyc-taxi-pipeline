@@ -1,13 +1,28 @@
-from pathlib import Path
+from contextlib import asynccontextmanager
 
 import aiofiles
-from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi import FastAPI, HTTPException, Request
 
-from .config import MINIO_DATA_BUCKET_NAME, TMP_DATA_DIR
-from .data import validate_parquet_file
-from .s3 import get_minio_client, put_file_to_minio
+from api.config import MINIO_DATA_BUCKET_NAME, TMP_DATA_DIR
+from api.data import validate_parquet_file
+from api.db import add_job, close_pool, get_next_pending_job, get_pool, init_db
+from api.jobs import JobNotFoundError, JobRequest, now_utc
+from api.s3 import close_minio_client, get_minio_client, put_file_to_minio
 
 app = FastAPI()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    pool = await get_pool()
+    await init_db(pool)
+    await get_minio_client()
+    yield
+    await close_minio_client()
+    await close_pool()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/ingest/{year}/{month}")
@@ -25,7 +40,8 @@ async def ingest_data(year: int, month: int, request: Request):
         )
 
     total_bytes = 0
-    dest_path = TMP_DATA_DIR / f"yellow_tripdata_{year:04d}-{month:02d}.parquet"
+    file_key = f"yellow_tripdata_{year:04d}-{month:02d}.parquet"
+    dest_path = TMP_DATA_DIR / file_key
     print(f"Starting ingestion for year: {year} and month: {month}...")
 
     content_type = request.headers.get("content-type", "")
@@ -55,13 +71,12 @@ async def ingest_data(year: int, month: int, request: Request):
         )
 
     try:
-        async with get_minio_client() as client:
-            await put_file_to_minio(
-                client,
-                dest_path,
-                bucket=MINIO_DATA_BUCKET_NAME,
-                key=f"yellow_tripdata_{year:04d}-{month:02d}.parquet",
-            )
+        await put_file_to_minio(
+            await get_minio_client(),
+            dest_path,
+            bucket=MINIO_DATA_BUCKET_NAME,
+            key=f"yellow_tripdata_{year:04d}-{month:02d}.parquet",
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -71,6 +86,31 @@ async def ingest_data(year: int, month: int, request: Request):
     finally:
         dest_path.unlink(missing_ok=True)
 
+    now = now_utc()
+    job = JobRequest(
+        file_key=file_key,
+        year=year,
+        month=month,
+        status="pending",
+        created_at=now,
+        updated_at=now,
+    )
+
+    db_pool = await get_pool()
+    await add_job(db_pool, job)
+
     return {
         "message": f"Data for {year}-{month:02d} ingested successfully. Total bytes: {total_bytes}."
     }
+
+
+@app.get("/jobs/next", response_model=JobRequest | None)
+async def next_job():
+    """Get the next pending job from the database."""
+    pool = await get_pool()
+    try:
+        next = await get_next_pending_job(pool)
+    except JobNotFoundError:
+        raise HTTPException(status_code=404, detail="No pending jobs found.")
+
+    return next

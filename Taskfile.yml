@@ -1,11 +1,13 @@
 version: '3'
+env:
+  KEEP_CONTAINERS: "false"
+
 tasks:
   test:
     cmds:
-      - docker compose -f docker-compose.yaml up minio -d
-      - uv run pytest -svv --disable-warnings --maxfail=1
-    defer:
-      - docker compose -f docker-compose.yaml down --remove-orphans
+      - docker compose -f docker-compose.yaml up minio postgres -d
+      - uv run pytest -svv --maxfail=1
+      - defer: if [ "$KEEP_CONTAINERS" = "false" ]; then docker compose -f docker-compose.yaml down -v --remove-orphans; else echo "Containers are being kept"; fi
 
   build:
     cmds:
@@ -15,7 +17,10 @@ tasks:
     cmds:
       - python download.py 2025
 
+  lint:
+    cmds:
+      - uv run ruff check --fix .
+
   format:
     cmds:
-      - uv run black --target-version py314 .
-      - uv run isort --profile black .
+      - uv run ruff format .
