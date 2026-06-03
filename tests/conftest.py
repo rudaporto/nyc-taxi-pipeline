@@ -1,6 +1,7 @@
 import pytest
 from botocore.exceptions import ClientError
 
+from api.db import get_pool, init_db
 from api.main import MINIO_DATA_BUCKET_NAME
 from api.s3 import get_minio_client
 
@@ -17,8 +18,8 @@ async def create_test_bucket(client, bucket_name: str):
 @pytest.fixture(scope="module")
 async def minio_client():
     """Fixture to provide a MinIO client for tests."""
-    async with get_minio_client() as client:
-        yield client
+    client = await get_minio_client()
+    yield client
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -27,4 +28,12 @@ async def setup_minio(minio_client):
 
     await create_test_bucket(minio_client, bucket_name=MINIO_DATA_BUCKET_NAME)
 
+    yield  # Tests will run after this point
+
+
+@pytest.fixture(scope="module", autouse=True)
+async def init_db_fixture():
+    """Fixture to initialize the database before running tests."""
+    pool = await get_pool()
+    await init_db(pool)
     yield  # Tests will run after this point

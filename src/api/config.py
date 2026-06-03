@@ -9,3 +9,5 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 MINIO_DATA_BUCKET_NAME = os.getenv("MINIO_DATA_BUCKET_NAME", "data")
 MINIO_KEY = os.getenv("MINIO_KEY", "my-key")
+
+DB_URL = os.getenv("DB_URL", "postgresql://postgres:password@localhost:7432/nyc_taxi")
